@@ -18,16 +18,19 @@ export const getRequest = async (endpoint: string) => {
 }
 
 // generic use for post requests to backend with JSON payload
-export const postRequest = async (endpoint: string, payload: string) => {
+export const postRequest = async (endpoint: string, payload: string, signal?: AbortSignal) => {
+    if (signal?.aborted) throw new DOMException('Request cancelled', 'AbortError');
     const response = await fetch(getBackendUrl() + endpoint, {
         method: 'POST',
         headers: {
             'Accept': '*/*',
             'Content-Type': 'application/json'
         },
-        body: payload
+        body: payload,
+        signal,
     });
     const data = await response.json();
+    if (signal?.aborted) throw new DOMException('Request cancelled', 'AbortError');
     return data;
 }
 

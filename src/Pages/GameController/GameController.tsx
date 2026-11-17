@@ -1,4 +1,5 @@
-import { useContext, useEffect, useState } from 'react';
+import { useContext, useEffect, useRef, useState } from 'react';
+import { startPolling } from '../../Utils/Polling';
 import './GameController.scss';
 import { postRequest } from '../../Utils/Api';
 import { Navigate } from 'react-router-dom';
@@ -50,10 +51,12 @@ const GameController = () => {
     // simply lets players see the return home and view historical results buttons from the session results page if host says the golf game session is over
     const [sessionEnded, setSessionEnded] = useState(false);
 
+    const controllerPolling = useRef(false);
+
     useEffect(() => {
         // Pull all session information from the server, which checks the database, which is the Single Source of Truth.
         // Interval will regularly poll back-end for updates 
-        const interval = setInterval(async () => {
+        return startPolling(async (signal, stop) => {
             try {
                 // If sessionId and / or playerId are null, try pulling them from local storage
                 // If they aren't there then the user is not in a valid session and should be redirected to the home page,
@@ -88,7 +91,7 @@ const GameController = () => {
                         setInValidSession(false);
                     }
                 } else {
-                    const response = await postRequest('session/status', JSON.stringify({ sessionId, playerId }));
+                    const response = await postRequest('session/status', JSON.stringify({ sessionId, playerId }), signal);
                     // sessionId must exist to fetch session status. If there is no sessionId or
                     // if response tells us that session is invalid then redirect to home page
                     if (!sessionId || response.error === "Session not found") {
@@ -116,12 +119,13 @@ const GameController = () => {
                         // make sure round number is also updated
                         setCurrRound(response?.session?.round);
                         setSessionEnded(true);
-                        clearInterval(interval);
+                        stop();
                     } else {
                         // if we changed rounds reset currentResults
                         if (currRound !== response?.session?.round) {
                             setCurrentResults([]);
                             setCurrRound(response?.session?.round);
+                            return; // Wait for the next cycle instead of fetching the previous round.
                         }
                     }
                     // Rounds where OTHER player results want to be seen will pull round results and include:
@@ -131,7 +135,7 @@ const GameController = () => {
                         // Pull current results here for golf game
                         const resultsResponse = await postRequest('/session/roundresults', JSON.stringify({
                             sessionId, round: currRound
-                        }));
+                        }), signal);
                         if (resultsResponse.success) {
                             // TODO could Only update state if the length of results changed (new player info came)
                             setCurrentResults(resultsResponse.results);
@@ -143,7 +147,7 @@ const GameController = () => {
                         // Pull final results here for golf game
                         const resultsResponse = await postRequest('/session/finalresults', JSON.stringify({
                             sessionId
-                        }));
+                        }), signal);
                         if (resultsResponse.success) {
                             // TODO could Only update state if the length of results changed (new player info came)
                             setFinalResults(resultsResponse.results);
@@ -155,7 +159,7 @@ const GameController = () => {
                         // Pull current results here for Mechanical Arm game
                         const resultsResponse = await postRequest('/session/armroundresults', JSON.stringify({
                             sessionId, round: currRound
-                        }));
+                        }), signal);
                         if (resultsResponse.success) {
                             setCurrentArmResults(resultsResponse.results);
                         }
@@ -165,14 +169,9 @@ const GameController = () => {
                     } 
                 }
             } catch (error) {
-                console.error("Error fetching session status: ", error);
+                if (!signal.aborted) console.error("Error fetching session status: ", error);
             }
-        }, 2500); // This is the frequency of the polling in milliseconds.
-
-        // clear interval when component unmounts
-        return () => {
-            clearInterval(interval);
-        }
+        }, controllerPolling);
     }, [sessionId, playerId, setCurrentResults, setFinalResults, currentResults.length, finalResults.length, finishedRound, currRound, finalArmResults.length, setSessionId, setPlayerId, setPlayerColor, setIsHost]);
 
     // Rounds allow the host to move the game forward and change the screen displayed for all players.

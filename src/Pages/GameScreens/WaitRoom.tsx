@@ -1,4 +1,5 @@
-import { useContext, useEffect, useState } from 'react';
+import { useContext, useEffect, useRef, useState } from 'react';
+import { startPolling } from '../../Utils/Polling';
 import './WaitRoom.scss';
 import { UserContext } from '../../App';
 import { Button, FloatButton, Table, Tooltip, message } from 'antd';
@@ -66,13 +67,15 @@ const WaitRoom = (props: {
 
     const navigate = useNavigate();
 
+    const lobbyPolling = useRef(false);
+
     // Poll for all players in session
     useEffect(() => {
         // Pull all session information from the server, which checks the database, which is the Single Source of Truth.
         // Interval will regularly poll back-end for updates 
-        const interval = setInterval(async () => {
+        return startPolling(async (signal) => {
             try {
-                const response = await postRequest('session/players', JSON.stringify({ sessionId }));
+                const response = await postRequest('session/players', JSON.stringify({ sessionId }), signal);
                 if (response.success) {
                     setPlayers(response.players);
                     setCompletedOnboarding(response.completedOnboarding);
@@ -80,14 +83,9 @@ const WaitRoom = (props: {
                     console.error("Error pulling players in session in wait room: ", response);
                 }
             } catch (error) {
-                console.error("Error pulling players in session in wait room: ", error);
+                if (!signal.aborted) console.error("Error pulling players in session in wait room: ", error);
             }
-        }, 2500); // This is the frequency of the polling in milliseconds.
-
-        // clear interval when component unmounts
-        return () => {
-            clearInterval(interval);
-        }
+        }, lobbyPolling);
     }, [sessionId]);
 
     // tells backend to remove a player from their session

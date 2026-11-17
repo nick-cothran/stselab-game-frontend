@@ -3,8 +3,9 @@ import {
     Checkbox,
     Radio,
 } from 'antd';
+import { startPolling } from '../../../Utils/Polling';
 import './FreeRoamSurvey.scss';
-import { SetStateAction, useContext, useEffect, useState } from 'react';
+import { SetStateAction, useContext, useEffect, useRef, useState } from 'react';
 import { advanceSession, postRequest } from '../../../Utils/Api';
 import { UserContext } from '../../../App';
 import VerificationModal from '../../../ReusableComponents/VerificationModal';
@@ -29,27 +30,24 @@ const FreeRoamSurvey = (props: {
 
     const { isHost, playerId, sessionId } = useContext(UserContext);
 
+    const surveyPolling = useRef(false);
+
     useEffect(() => {
         // Pull all session information from the server, which checks the database, which is the Single Source of Truth.
         // Interval will regularly poll back-end for updates 
-        const interval = setInterval(async () => {
+        return startPolling(async (signal) => {
             try {
                 if (!totalPlayers || !surveysSubmitted || surveysSubmitted < totalPlayers) {
-                    const response = await postRequest('session/surveyssubmitted', JSON.stringify({ sessionId }));
+                    const response = await postRequest('session/surveyssubmitted', JSON.stringify({ sessionId }), signal);
                     if (response.success) {
                         setTotalPlayers(response.totalPlayers);
                         setSurveysSubmitted(response.surveysSubmitted);
                     }
                 }
             } catch (error) {
-                console.error("Error pulling suverys submitted: ", error);
+                if (!signal.aborted) console.error("Error pulling suverys submitted: ", error);
             }
-        }, 2500); // This is the frequency of the polling in milliseconds.
-
-        // clear interval when component unmounts
-        return () => {
-            clearInterval(interval);
-        }
+        }, surveyPolling);
     }, [sessionId, surveysSubmitted, totalPlayers]);
 
     // To make choices simple to store, can use values of:
